@@ -1303,24 +1303,29 @@ function calcTraining() {
   const mTotal = mModel + mGrad + mOptim + mAct;
   const mTotalGB = mTotal / 1e9;
 
-  // 迭代求解 ZeRO 后每 GPU 显存和最低 GPU 数
+  // 求解满足每GPU显存 <= cap 的最小 GPU 数
+  const capBytes = memGB * etaFrag * 1e9;
   let nMin = Math.max(1, Math.ceil(mTotalGB / (memGB * etaFrag)));
   let mPerGPU = mTotal;
 
-  for (let iter = 0; iter < 5; iter++) {
-    const n = nMin;
-    if (zeroStage === 0) {
-      mPerGPU = mTotal; // 无分片
-    } else if (zeroStage === 1) {
-      mPerGPU = mModel + mGrad + mOptim / n + mAct; // 优化器分片
-    } else if (zeroStage === 2) {
-      mPerGPU = mModel + (mGrad + mOptim) / n + mAct; // 优化器+梯度分片
-    } else {
-      mPerGPU = (mModel + mGrad + mOptim) / n + mAct; // 全分片
+  if (zeroStage === 0) {
+    // 无分片：每卡都存完整份，显存不随 n 变化
+    mPerGPU = mTotal;
+  } else {
+    // 有分片：逐步增加 n，直到每卡显存 <= cap
+    for (let n = nMin; n < 50000; n++) {
+      if (zeroStage === 1) {
+        mPerGPU = mModel + mGrad + mOptim / n + mAct;
+      } else if (zeroStage === 2) {
+        mPerGPU = mModel + (mGrad + mOptim) / n + mAct;
+      } else {
+        mPerGPU = (mModel + mGrad + mOptim) / n + mAct;
+      }
+      if (mPerGPU <= capBytes) {
+        nMin = n;
+        break;
+      }
     }
-    const newN = Math.max(1, Math.ceil((mPerGPU / 1e9) / (memGB * etaFrag)));
-    if (newN === nMin) break;
-    nMin = newN;
   }
 
   const mPerGPUGB = mPerGPU / 1e9;
