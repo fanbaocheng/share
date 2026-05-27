@@ -1,0 +1,1439 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LLM GPU 算力速算手册</title>
+<style>
+:root {
+  --bg: #0f1117;
+  --card: #1a1d27;
+  --card-alt: #21242f;
+  --border: #2d3140;
+  --text: #e2e4eb;
+  --text-muted: #8b8fa3;
+  --accent: #6c8cff;
+  --accent-dim: rgba(108,140,255,0.12);
+  --accent-glow: rgba(108,140,255,0.25);
+  --red: #ff6b6b;
+  --green: #51cf66;
+  --orange: #ffa94d;
+  --purple: #cc5de8;
+  --cyan: #22b8cf;
+  --sidebar-w: 240px;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.7;
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+}
+
+/* ===== Sidebar ===== */
+.sidebar {
+  width: var(--sidebar-w);
+  min-width: var(--sidebar-w);
+  height: 100vh;
+  background: var(--card);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+.sidebar-header {
+  padding: 28px 20px 8px;
+}
+.sidebar-header h1 {
+  font-size: 1.1em;
+  font-weight: 700;
+  background: linear-gradient(135deg, #6c8cff, #cc5de8);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin-bottom: 2px;
+}
+.sidebar-header .version {
+  font-size: 0.78em;
+  color: var(--text-muted);
+}
+.sidebar-nav {
+  flex: 1;
+  padding: 12px 0;
+}
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 20px;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 0.88em;
+  font-weight: 500;
+  transition: all 0.2s;
+  border-left: 3px solid transparent;
+  position: relative;
+}
+.nav-item:hover {
+  color: var(--text);
+  background: rgba(108,140,255,0.04);
+}
+.nav-item.active {
+  color: var(--accent);
+  background: var(--accent-dim);
+  border-left-color: var(--accent);
+}
+.nav-icon {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.05em;
+  flex-shrink: 0;
+}
+.nav-num {
+  font-size: 0.72em;
+  color: var(--text-muted);
+  opacity: 0.5;
+  margin-left: auto;
+  font-weight: 400;
+}
+.nav-item.active .nav-num { opacity: 1; color: var(--accent); }
+.sidebar-footer {
+  padding: 16px 20px;
+  border-top: 1px solid var(--border);
+  font-size: 0.75em;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+/* ===== Main Content ===== */
+.main {
+  flex: 1;
+  height: 100vh;
+  overflow-y: auto;
+  padding: 36px 40px;
+}
+.section { display: none; }
+.section.active { display: block; }
+
+/* ===== Typography ===== */
+h2 { font-size: 1.5em; font-weight: 700; margin-bottom: 8px; }
+h2 .section-tag {
+  font-size: 0.5em;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-dim);
+  padding: 3px 10px;
+  border-radius: 4px;
+  vertical-align: middle;
+  margin-left: 10px;
+}
+.section-desc { color: var(--text-muted); font-size: 0.92em; margin-bottom: 28px; }
+h3 { font-size: 1.15em; font-weight: 600; margin: 28px 0 12px; color: var(--accent); }
+h4 { font-size: 1em; font-weight: 600; margin: 20px 0 8px; color: var(--orange); }
+p { margin: 8px 0; color: var(--text); }
+
+/* ===== Cards ===== */
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 24px;
+  margin: 16px 0;
+}
+.card-alt {
+  background: var(--card-alt);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 20px;
+  margin: 12px 0;
+}
+
+/* ===== Formula ===== */
+.formula-box {
+  background: linear-gradient(135deg, rgba(108,140,255,0.08), rgba(204,93,232,0.06));
+  border: 1px solid rgba(108,140,255,0.25);
+  border-radius: 10px;
+  padding: 20px 24px;
+  margin: 16px 0;
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 0.92em;
+  line-height: 2;
+  overflow-x: auto;
+}
+.formula-box .label { color: var(--orange); font-weight: 600; }
+.formula-box .var { color: var(--cyan); }
+.formula-box .op { color: var(--text-muted); }
+.formula-box .comment { color: var(--text-muted); font-size: 0.85em; }
+.coeff-tag {
+  display: inline-block;
+  background: var(--accent-dim);
+  color: var(--accent);
+  font-size: 0.8em;
+  padding: 2px 8px;
+  border-radius: 4px;
+  margin-left: 6px;
+  font-weight: 500;
+}
+
+/* ===== Tables ===== */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0;
+  font-size: 0.9em;
+}
+th {
+  background: var(--card-alt);
+  color: var(--accent);
+  font-weight: 600;
+  text-align: left;
+  padding: 10px 12px;
+  border-bottom: 2px solid var(--border);
+  white-space: nowrap;
+}
+td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+tr:hover td { background: rgba(108,140,255,0.04); }
+.tag-red { color: var(--red); font-weight: 600; }
+.tag-green { color: var(--green); font-weight: 600; }
+.tag-orange { color: var(--orange); font-weight: 600; }
+.tag-purple { color: var(--purple); font-weight: 600; }
+.tag-cyan { color: var(--cyan); font-weight: 600; }
+
+/* ===== Calculator Tabs ===== */
+.calc-tabs {
+  display: flex;
+  gap: 2px;
+  margin-bottom: 20px;
+  background: var(--card-alt);
+  border-radius: 10px;
+  padding: 4px;
+  border: 1px solid var(--border);
+}
+.calc-tab {
+  flex: 1;
+  padding: 10px 16px;
+  text-align: center;
+  cursor: pointer;
+  font-size: 0.9em;
+  font-weight: 500;
+  color: var(--text-muted);
+  border-radius: 8px;
+  transition: all 0.2s;
+}
+.calc-tab:hover { color: var(--text); background: rgba(108,140,255,0.06); }
+.calc-tab.active {
+  color: #fff;
+  background: linear-gradient(135deg, #6c8cff, #8b6cff);
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(108,140,255,0.3);
+}
+.calc-panel { display: none; }
+.calc-panel.active { display: block; }
+
+/* ===== Calculator Fields ===== */
+.calc-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 14px;
+}
+@media (max-width: 1100px) { .calc-grid { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 700px) { .calc-grid { grid-template-columns: 1fr; } }
+.calc-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.calc-field label {
+  font-size: 0.82em;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+.calc-field input, .calc-field select {
+  background: var(--card-alt);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 0.95em;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.calc-field input:focus, .calc-field select:focus { border-color: var(--accent); }
+
+/* Model preset highlight */
+.calc-field.model-preset select {
+  border-color: var(--accent);
+  background: rgba(108,140,255,0.08);
+  font-weight: 500;
+}
+
+/* Advanced toggle */
+.adv-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 0.85em;
+  margin: 12px 0 8px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  transition: all 0.2s;
+  user-select: none;
+}
+.adv-toggle:hover { color: var(--accent); background: var(--accent-dim); }
+.adv-toggle .arrow { transition: transform 0.2s; display: inline-block; }
+.adv-toggle.open .arrow { transform: rotate(90deg); }
+.adv-params { display: none; }
+.adv-params.show { display: grid; }
+
+.calc-result {
+  margin-top: 20px;
+  padding: 20px;
+  background: linear-gradient(135deg, rgba(81,207,102,0.06), rgba(108,140,255,0.06));
+  border: 1px solid rgba(81,207,102,0.2);
+  border-radius: 10px;
+}
+.calc-result .result-value {
+  font-size: 1.6em;
+  font-weight: 700;
+  color: var(--green);
+}
+.calc-result .result-label {
+  font-size: 0.85em;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+.calc-result .result-detail {
+  font-size: 0.85em;
+  color: var(--text-muted);
+  margin-top: 8px;
+  line-height: 1.8;
+  white-space: pre-wrap;
+}
+.result-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 12px;
+  margin-top: 12px;
+}
+@media (max-width: 700px) { .result-grid { grid-template-columns: 1fr; } }
+.result-item {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  text-align: center;
+}
+.result-item .ri-value { font-size: 1.2em; font-weight: 700; color: var(--accent); }
+.result-item .ri-label { font-size: 0.8em; color: var(--text-muted); margin-top: 2px; }
+.note {
+  font-size: 0.88em;
+  color: var(--text-muted);
+  font-style: italic;
+  margin: 8px 0;
+  padding-left: 12px;
+  border-left: 2px solid var(--border);
+}
+.warning {
+  background: rgba(255,107,107,0.08);
+  border: 1px solid rgba(255,107,107,0.2);
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin: 12px 0;
+  font-size: 0.9em;
+  color: var(--red);
+}
+.model-note {
+  display: inline-block;
+  background: rgba(34,184,207,0.1);
+  border: 1px solid rgba(34,184,207,0.25);
+  color: var(--cyan);
+  font-size: 0.8em;
+  padding: 4px 10px;
+  border-radius: 4px;
+  margin-top: 8px;
+}
+
+/* ===== Scrollbar ===== */
+.sidebar::-webkit-scrollbar, .main::-webkit-scrollbar { width: 5px; }
+.sidebar::-webkit-scrollbar-track, .main::-webkit-scrollbar-track { background: transparent; }
+.sidebar::-webkit-scrollbar-thumb, .main::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+.sidebar::-webkit-scrollbar-thumb:hover, .main::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+/* ===== Responsive ===== */
+@media (max-width: 900px) {
+  :root { --sidebar-w: 56px; }
+  .sidebar-header h1, .sidebar-header .version, .nav-label, .nav-num, .sidebar-footer { display: none; }
+  .sidebar-header { padding: 16px 0 8px; text-align: center; }
+  .nav-item { padding: 12px 0; justify-content: center; }
+  .main { padding: 24px 20px; }
+}
+</style>
+</head>
+<body>
+
+<!-- ===== Sidebar ===== -->
+<aside class="sidebar">
+  <div class="sidebar-header">
+    <h1>GPU 算力速算</h1>
+    <div class="version">v1.9 · 2026-05-27</div>
+  </div>
+  <nav class="sidebar-nav">
+    <div class="nav-item active" onclick="switchSection('calc', this)">
+      <span class="nav-icon">🧮</span>
+      <span class="nav-label">交互式计算器</span>
+      <span class="nav-num">01</span>
+    </div>
+    <div class="nav-item" onclick="switchSection('gpu', this)">
+      <span class="nav-icon">🖥</span>
+      <span class="nav-label">GPU 参数速查</span>
+      <span class="nav-num">02</span>
+    </div>
+    <div class="nav-item" onclick="switchSection('infer', this)">
+      <span class="nav-icon">⚡</span>
+      <span class="nav-label">推理 QPM 公式</span>
+      <span class="nav-num">03</span>
+    </div>
+    <div class="nav-item" onclick="switchSection('train', this)">
+      <span class="nav-icon">🏋</span>
+      <span class="nav-label">训练 GPU 数公式</span>
+      <span class="nav-num">04</span>
+    </div>
+    <div class="nav-item" onclick="switchSection('lora', this)">
+      <span class="nav-icon">🔧</span>
+      <span class="nav-label">LoRA 微调公式</span>
+      <span class="nav-num">05</span>
+    </div>
+  </nav>
+  <div class="sidebar-footer">
+    公式含经验系数<br>偏差范围 ±20%<br>建议实测验证
+  </div>
+</aside>
+
+<!-- ===== Main Content ===== -->
+<div class="main">
+
+<!-- ==================== 01 交互式计算器 ==================== -->
+<div id="sec-calc" class="section active">
+<h2>交互式计算器 <span class="section-tag">实时计算 · 参数可调</span></h2>
+<p class="section-desc">选择常用模型和 GPU 型号，实时计算推理 QPM、训练/微调最低 GPU 数。</p>
+
+<!-- Calculator Tabs -->
+<div class="calc-tabs">
+  <div class="calc-tab active" onclick="switchCalcTab('infer', this)">⚡ 推理 QPM</div>
+  <div class="calc-tab" onclick="switchCalcTab('train', this)">🏋 全量训练</div>
+  <div class="calc-tab" onclick="switchCalcTab('lora', this)">🔧 LoRA 微调</div>
+</div>
+
+
+<!-- ===== 推理 QPM 计算器 ===== -->
+<div id="calc-infer" class="calc-panel active">
+<div class="card">
+<div class="calc-grid">
+  <div class="calc-field model-preset">
+    <label>常用模型</label>
+    <select id="infer-model" onchange="applyModelPreset('infer')">
+      <option value="">自定义</option>
+      <option value="glm51" selected>GLM-5.1 (754B/32B MoE)</option>
+      <option value="deepseek-v4-pro">DeepSeek-V4-Pro (1.6T/49B MoE)</option>
+      <option value="deepseek-v4-flash">DeepSeek-V4-Flash (284B/13B MoE)</option>
+      <option value="hy3">Hy3 混元3 (295B/21B MoE)</option>
+      <option value="qwen3-32b">Qwen3-32B (32B Dense)</option>
+    </select>
+  </div>
+  <div class="calc-field">
+    <label>GPU 型号</label>
+    <select id="infer-gpu" onchange="calcInference()">
+      <option value="96,4000,148,900">H20 (96GB)</option>
+      <option value="80,2000,312,400">A800 80GB</option>
+      <option value="96,2048,345,0" selected>昆仑芯 P800 (96GB)</option>
+      <option value="80,3350,1979,900">H100 SXM (80GB)</option>
+      <option value="80,3350,1979,400">H800 SXM (80GB)</option>
+      <option value="64,1200,313,0">910B3 (64GB)</option>
+      <option value="96,1200,345,0">思元590 (96GB)</option>
+      <option value="48,864,120,0">L20 (48GB)</option>
+      <option value="48,448,100,0">MTT S4000 (48GB)</option>
+      <option value="custom">自定义...</option>
+    </select>
+  </div>
+  <div class="calc-field">
+    <label>GPU 数量（单节点）</label>
+    <input type="number" id="infer-ngpu" value="8" min="1" max="128" onchange="calcInference()">
+  </div>
+  <div class="calc-field">
+    <label>权重精度</label>
+    <select id="infer-prec" onchange="calcInference()">
+      <option value="2">FP16 / BF16</option>
+      <option value="1">INT8</option>
+      <option value="0.5" selected>INT4</option>
+    </select>
+  </div>
+  <div class="calc-field">
+    <label>上下文长度 (tokens)</label>
+    <input type="number" id="infer-seqlen" value="4096" min="128" step="128" onchange="calcInference()">
+  </div>
+  <div class="calc-field">
+    <label>平均输出 token 数</label>
+    <input type="number" id="infer-outlen" value="500" min="1" onchange="calcInference()">
+  </div>
+  <div class="calc-field">
+    <label>算子利用率 η_hw</label>
+    <input type="number" id="infer-eta-hw" value="0.55" min="0.1" max="1" step="0.05" onchange="calcInference()">
+  </div>
+  <div class="calc-field" id="infer-eta-moe-wrap" style="display:none;">
+    <label>MoE 综合效率 η_moe <span class="field-hint" title="All-to-All通信 + 专家负载不均衡 + 路由开销&#10;EP=8 时典型值 0.60~0.85&#10;TP-only(无EP) 时可接近 1.0">ⓘ</span></label>
+    <input type="number" id="infer-eta-moe" value="0.70" min="0.3" max="1.0" step="0.05" onchange="calcInference()">
+  </div>
+</div>
+
+<div class="adv-toggle" onclick="toggleAdv(this, 'infer-adv')">
+  <span class="arrow">▶</span> 高级参数（模型架构细节）
+</div>
+<div id="infer-adv" class="adv-params calc-grid">
+  <div class="calc-field">
+    <label>模型架构</label>
+    <select id="infer-arch" onchange="calcInference(); toggleMoeEfficiency(this.value);">
+      <option value="dense">Dense</option>
+      <option value="moe">MoE</option>
+    </select>
+  </div>
+  <div class="calc-field">
+    <label>总参数量 (B)</label>
+    <input type="number" id="infer-ptotal" value="70" min="0.1" step="0.1" onchange="calcInference()">
+  </div>
+  <div class="calc-field">
+    <label>激活参数量 (B) — MoE 填写</label>
+    <input type="number" id="infer-pactive" value="70" min="0.1" step="0.1" onchange="calcInference()">
+  </div>
+  <div class="calc-field">
+    <label>Transformer 层数</label>
+    <input type="number" id="infer-layers" value="80" min="1" onchange="calcInference()">
+  </div>
+  <div class="calc-field">
+    <label>KV 头数 (GQA)</label>
+    <input type="number" id="infer-hkv" value="8" min="1" onchange="calcInference()">
+  </div>
+  <div class="calc-field">
+    <label>每头维度</label>
+    <input type="number" id="infer-dhead" value="128" min="1" onchange="calcInference()">
+  </div>
+  <div class="calc-field">
+    <label>KV Cache 精度</label>
+    <select id="infer-kvprec" onchange="calcInference()">
+      <option value="2">FP16</option>
+      <option value="1">INT8</option>
+    </select>
+  </div>
+</div>
+<div id="infer-model-note" class="model-note" style="display:none;"></div>
+
+<div class="calc-result" id="infer-result">
+  <div class="result-value" id="infer-qpm">--</div>
+  <div class="result-label">QPM（每分钟查询数）</div>
+  <div class="result-grid">
+    <div class="result-item"><div class="ri-value" id="infer-mem-total">--</div><div class="ri-label">节点总显存</div></div>
+    <div class="result-item"><div class="ri-value" id="infer-mem-need">--</div><div class="ri-label">推理所需显存</div></div>
+    <div class="result-item"><div class="ri-value" id="infer-mem-kv">--</div><div class="ri-label">KV Cache / 请求</div></div>
+  </div>
+  <div class="result-detail" id="infer-detail"></div>
+</div>
+</div>
+</div>
+
+<!-- ===== 全量训练计算器 ===== -->
+<div id="calc-train" class="calc-panel">
+<div class="card">
+<div class="calc-grid">
+  <div class="calc-field model-preset">
+    <label>常用模型</label>
+    <select id="train-model" onchange="applyModelPreset('train')">
+      <option value="">自定义</option>
+      <option value="glm51" selected>GLM-5.1 (754B/32B MoE)</option>
+      <option value="deepseek-v4-pro">DeepSeek-V4-Pro (1.6T/49B MoE)</option>
+      <option value="deepseek-v4-flash">DeepSeek-V4-Flash (284B/13B MoE)</option>
+      <option value="hy3">Hy3 混元3 (295B/21B MoE)</option>
+      <option value="qwen3-32b">Qwen3-32B (32B Dense)</option>
+    </select>
+  </div>
+  <div class="calc-field">
+    <label>GPU 型号</label>
+    <select id="train-gpu" onchange="calcTraining()">
+      <option value="96,4000,148">H20 (96GB)</option>
+      <option value="80,2000,312">A800 80GB</option>
+      <option value="96,2048,345" selected>昆仑芯 P800 (96GB)</option>
+      <option value="80,3350,1979">H100 SXM (80GB)</option>
+      <option value="80,3350,1979">H800 SXM (80GB)</option>
+      <option value="64,1200,313">910B3 (64GB)</option>
+      <option value="96,1200,345">思元590 (96GB)</option>
+      <option value="custom">自定义...</option>
+    </select>
+  </div>
+  <div class="calc-field">
+    <label>ZeRO 策略</label>
+    <select id="train-zero" onchange="calcTraining()">
+      <option value="0">ZeRO-0（无分片）</option>
+      <option value="1">ZeRO-1（优化器分片）</option>
+      <option value="2">ZeRO-2（优化器+梯度分片）</option>
+      <option value="3" selected>ZeRO-3（全分片）</option>
+    </select>
+  </div>
+  <div class="calc-field">
+    <label>序列长度</label>
+    <input type="number" id="train-seqlen" value="4096" min="128" onchange="calcTraining()">
+  </div>
+  <div class="calc-field">
+    <label>单 GPU Batch Size</label>
+    <input type="number" id="train-bs" value="1" min="1" onchange="calcTraining()">
+  </div>
+</div>
+
+<div class="adv-toggle" onclick="toggleAdv(this, 'train-adv')">
+  <span class="arrow">▶</span> 高级参数（模型架构细节）
+</div>
+<div id="train-adv" class="adv-params calc-grid">
+  <div class="calc-field">
+    <label>模型架构</label>
+    <select id="train-arch" onchange="calcTraining()">
+      <option value="dense">Dense</option>
+      <option value="moe">MoE</option>
+    </select>
+  </div>
+  <div class="calc-field">
+    <label>总参数量 (B)</label>
+    <input type="number" id="train-ptotal" value="70" min="0.1" step="0.1" onchange="calcTraining()">
+  </div>
+  <div class="calc-field">
+    <label>激活参数量 (B) — MoE 填写</label>
+    <input type="number" id="train-pactive" value="70" min="0.1" step="0.1" onchange="calcTraining()">
+  </div>
+  <div class="calc-field">
+    <label>Hidden Dim</label>
+    <input type="number" id="train-hidden" value="8192" min="1" onchange="calcTraining()">
+  </div>
+  <div class="calc-field">
+    <label>Transformer 层数</label>
+    <input type="number" id="train-layers" value="80" min="1" onchange="calcTraining()">
+  </div>
+</div>
+<div id="train-model-note" class="model-note" style="display:none;"></div>
+
+<div class="calc-result" id="train-result">
+  <div class="result-value" id="train-ngpu">--</div>
+  <div class="result-label">最低 GPU 数量</div>
+  <div class="result-grid">
+    <div class="result-item"><div class="ri-value" id="train-mem-total">--</div><div class="ri-label">总显存需求</div></div>
+    <div class="result-item"><div class="ri-value" id="train-mem-per-gpu">--</div><div class="ri-label">每 GPU 显存 (ZeRO)</div></div>
+    <div class="result-item"><div class="ri-value" id="train-mem-act">--</div><div class="ri-label">激活值</div></div>
+  </div>
+  <div class="result-detail" id="train-detail"></div>
+</div>
+</div>
+</div>
+
+<!-- ===== LoRA 微调计算器 ===== -->
+<div id="calc-lora" class="calc-panel">
+<div class="card">
+<div class="calc-grid">
+  <div class="calc-field model-preset">
+    <label>常用模型</label>
+    <select id="lora-model" onchange="applyModelPreset('lora')">
+      <option value="">自定义</option>
+      <option value="glm51" selected>GLM-5.1 (754B/32B MoE)</option>
+      <option value="deepseek-v4-pro">DeepSeek-V4-Pro (1.6T/49B MoE)</option>
+      <option value="deepseek-v4-flash">DeepSeek-V4-Flash (284B/13B MoE)</option>
+      <option value="hy3">Hy3 混元3 (295B/21B MoE)</option>
+      <option value="qwen3-32b">Qwen3-32B (32B Dense)</option>
+    </select>
+  </div>
+  <div class="calc-field">
+    <label>GPU 型号</label>
+    <select id="lora-gpu" onchange="calcLora()">
+      <option value="96,4000,148">H20 (96GB)</option>
+      <option value="80,2000,312">A800 80GB</option>
+      <option value="96,2048,345" selected>昆仑芯 P800 (96GB)</option>
+      <option value="80,3350,1979">H100 SXM (80GB)</option>
+      <option value="80,3350,1979">H800 SXM (80GB)</option>
+      <option value="64,1200,313">910B3 (64GB)</option>
+      <option value="96,1200,345">思元590 (96GB)</option>
+      <option value="custom">自定义...</option>
+    </select>
+  </div>
+  <div class="calc-field">
+    <label>基座精度</label>
+    <select id="lora-base-prec" onchange="calcLora()">
+      <option value="2">FP16 / BF16</option>
+      <option value="1">INT8</option>
+      <option value="0.5">INT4 (QLoRA)</option>
+    </select>
+  </div>
+  <div class="calc-field">
+    <label>LoRA Rank (r)</label>
+    <input type="number" id="lora-rank" value="16" min="1" onchange="calcLora()">
+  </div>
+  <div class="calc-field">
+    <label>序列长度</label>
+    <input type="number" id="lora-seqlen" value="4096" min="128" onchange="calcLora()">
+  </div>
+  <div class="calc-field">
+    <label>单 GPU Batch Size</label>
+    <input type="number" id="lora-bs" value="1" min="1" onchange="calcLora()">
+  </div>
+</div>
+
+<div class="adv-toggle" onclick="toggleAdv(this, 'lora-adv')">
+  <span class="arrow">▶</span> 高级参数（模型架构细节）
+</div>
+<div id="lora-adv" class="adv-params calc-grid">
+  <div class="calc-field">
+    <label>总参数量 (B)</label>
+    <input type="number" id="lora-ptotal" value="70" min="0.1" step="0.1" onchange="calcLora()">
+  </div>
+  <div class="calc-field">
+    <label>Target 投影数 (n_proj)</label>
+    <input type="number" id="lora-nproj" value="7" min="1" max="12" onchange="calcLora()">
+  </div>
+  <div class="calc-field">
+    <label>Transformer 层数</label>
+    <input type="number" id="lora-layers" value="80" min="1" onchange="calcLora()">
+  </div>
+  <div class="calc-field">
+    <label>Hidden Dim</label>
+    <input type="number" id="lora-hidden" value="8192" min="1" onchange="calcLora()">
+  </div>
+</div>
+<div id="lora-model-note" class="model-note" style="display:none;"></div>
+
+<div class="calc-result" id="lora-result">
+  <div class="result-value" id="lora-ngpu">--</div>
+  <div class="result-label">最低 GPU 数量</div>
+  <div class="result-grid">
+    <div class="result-item"><div class="ri-value" id="lora-mem-total">--</div><div class="ri-label">总显存需求</div></div>
+    <div class="result-item"><div class="ri-value" id="lora-plora">--</div><div class="ri-label">LoRA 可训练参数</div></div>
+    <div class="result-item"><div class="ri-value" id="lora-ratio">--</div><div class="ri-label">训练参数占比</div></div>
+  </div>
+  <div class="result-detail" id="lora-detail"></div>
+</div>
+</div>
+</div>
+
+<div class="warning" style="margin-top:24px;">
+  <strong>⚠️ 重要提醒</strong><br>
+  1. 所有公式为理论估算+经验系数修正，实际性能受框架、通信拓扑、数据质量等多因素影响，偏差范围 ±20%。<br>
+  2. MoE 模型在推理时如果使用 Expert Parallelism，实际 QPM 可能高于公式估算。<br>
+  3. 国产 GPU 的框架适配效率（MindSpore vs PyTorch）对实际性能影响显著，建议实测验证。
+</div>
+
+</div>
+
+<!-- ==================== 02 GPU 参数速查 ==================== -->
+<div id="sec-gpu" class="section">
+<h2>GPU 型号参数速查 <span class="section-tag">国产 + 英伟达对华出口</span></h2>
+<p class="section-desc">主流 GPU 核心参数一览，覆盖英伟达对华出口型号、全球旗舰参考、国产 GPU。</p>
+
+<h3>2.1 &nbsp; 英伟达对华出口型号</h3>
+<div class="card" style="overflow-x:auto;">
+<table>
+<thead>
+<tr>
+  <th>型号</th><th>架构</th><th>FP16 (TFLOPS)</th><th>FP8 (TFLOPS)</th><th>INT8 (TOPS)</th>
+  <th>显存</th><th>显存带宽</th><th>NVLink 带宽</th><th>TDP</th><th>备注</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td class="tag-orange">H20</td><td>Hopper</td><td>148</td><td>296</td><td>296</td>
+  <td>96 GB HBM3</td><td>4.0 TB/s</td><td>900 GB/s</td><td>400W</td><td>推理利器，训练弱于A800</td>
+</tr>
+<tr>
+  <td class="tag-orange">A800 80GB</td><td>Ampere</td><td>312</td><td>-</td><td>624</td>
+  <td>80 GB HBM2e</td><td>2.0 TB/s</td><td>400 GB/s</td><td>400W</td><td>训练主力，NVLink 阉割</td>
+</tr>
+<tr>
+  <td class="tag-orange">A800 40GB</td><td>Ampere</td><td>312</td><td>-</td><td>624</td>
+  <td>40 GB HBM2</td><td>1.56 TB/s</td><td>400 GB/s</td><td>240W</td><td>显存小，推理为主</td>
+</tr>
+<tr>
+  <td class="tag-orange">L20</td><td>Ada</td><td>119.5</td><td>239</td><td>239</td>
+  <td>48 GB GDDR6</td><td>864 GB/s</td><td>无 NVLink</td><td>275W</td><td>中端推理卡</td>
+</tr>
+<tr>
+  <td class="tag-orange">L2</td><td>Ada</td><td>96.5</td><td>193</td><td>193</td>
+  <td>24 GB GDDR6</td><td>300 GB/s</td><td>无 NVLink</td><td>TBD</td><td>入门推理</td>
+</tr>
+</tbody>
+</table>
+</div>
+
+<h3>2.2 &nbsp; 英伟达全球旗舰型号（参考对照）</h3>
+<div class="card" style="overflow-x:auto;">
+<table>
+<thead>
+<tr>
+  <th>型号</th><th>架构</th><th>FP16 Tensor (TFLOPS)</th><th>FP8 (TFLOPS)</th>
+  <th>显存</th><th>显存带宽</th><th>NVLink 带宽</th><th>TDP</th>
+</tr>
+</thead>
+<tbody>
+<tr><td class="tag-purple">H100 SXM</td><td>Hopper</td><td>1,979</td><td>3,958</td><td>80 GB HBM3</td><td>3.35 TB/s</td><td>900 GB/s</td><td>700W</td></tr>
+<tr><td class="tag-purple">H100 NVL</td><td>Hopper</td><td>1,671</td><td>3,341</td><td>94 GB HBM3</td><td>3.9 TB/s</td><td>600 GB/s</td><td>400W</td></tr>
+<tr><td class="tag-purple">H800 SXM</td><td>Hopper</td><td>1,979</td><td>3,958</td><td>80 GB HBM3</td><td>3.35 TB/s</td><td>400 GB/s</td><td>700W</td></tr>
+<tr><td class="tag-purple">A100 80GB SXM</td><td>Ampere</td><td>312 / 624*</td><td>-</td><td>80 GB HBM2e</td><td>2.04 TB/s</td><td>600 GB/s</td><td>400W</td></tr>
+<tr><td class="tag-purple">A100 40GB SXM</td><td>Ampere</td><td>312 / 624*</td><td>-</td><td>40 GB HBM2</td><td>1.56 TB/s</td><td>600 GB/s</td><td>400W</td></tr>
+</tbody>
+</table>
+<p class="note">* A100 FP16 含稀疏性为 624 TFLOPS，无稀疏性为 312 TFLOPS。H800 与 H100 算力相同但 NVLink 阉割至 400 GB/s。</p>
+</div>
+
+<h3>2.3 &nbsp; 国产 GPU 主流型号</h3>
+<div class="card" style="overflow-x:auto;">
+<table>
+<thead>
+<tr>
+  <th>厂商</th><th>型号</th><th>FP16 (TFLOPS)</th><th>INT8 (TOPS)</th>
+  <th>显存</th><th>显存带宽</th><th>卡间互联</th><th>TDP</th><th>备注</th>
+</tr>
+</thead>
+<tbody>
+<tr><td class="tag-cyan">华为昇腾</td><td>910B1</td><td>414</td><td>828</td><td>64 GB HBM2e</td><td>1.2 TB/s</td><td>HCCL RoCE</td><td>350W</td><td>910B 旗舰，液冷 8 卡</td></tr>
+<tr><td class="tag-cyan">华为昇腾</td><td>910B3</td><td>313</td><td>626</td><td>64 GB HBM3e</td><td>1.2 TB/s</td><td>HCCL RoCE</td><td>350W</td><td>主力训练卡</td></tr>
+<tr><td class="tag-cyan">华为昇腾</td><td>910B4</td><td>280</td><td>560</td><td>32 GB HBM2</td><td>400 GB/s</td><td>HCCL</td><td>310W</td><td>推理/边缘场景</td></tr>
+<tr><td class="tag-cyan">华为昇腾</td><td>910C</td><td>~800</td><td>~1600</td><td>待定(HBM3e)</td><td>~3.2 TB/s</td><td>HCCL RoCE</td><td>~700W</td><td>双芯合封，接近 H100 80%</td></tr>
+<tr><td class="tag-cyan">寒武纪</td><td>思元 590</td><td>345</td><td>-</td><td>96 GB HBM2e</td><td>-</td><td>-</td><td>-</td><td>接近 A100 水平</td></tr>
+<tr><td class="tag-cyan">沐曦</td><td>曦云 C500</td><td>240</td><td>-</td><td>64 GB HBM2e</td><td>-</td><td>-</td><td>-</td><td>训推一体</td></tr>
+<tr><td class="tag-cyan">沐曦</td><td>曦云 C600</td><td>-</td><td>-</td><td>144 GB HBM3e</td><td>3.35 TB/s</td><td>光互连</td><td>350W</td><td>FP8 支持，2025 WAIC 发布</td></tr>
+<tr><td class="tag-cyan">摩尔线程</td><td>MTT S4000</td><td>100</td><td>-</td><td>48 GB</td><td>448 GB/s</td><td>MTLink</td><td>-</td><td>全功能 GPU，推理为主</td></tr>
+<tr><td class="tag-cyan">壁仞科技</td><td>BR100</td><td>~2048</td><td>-</td><td>64 GB HBM2e</td><td>-</td><td>CXL</td><td>400W</td><td>TF32 1024 TFLOPS，含稀疏</td></tr>
+<tr><td class="tag-cyan">海光</td><td>深算 DCU K100</td><td>164</td><td>-</td><td>32 GB HBM2</td><td>1.02 TB/s</td><td>xGMI2</td><td>350W</td><td>类 CUDA 生态，无感迁移</td></tr>
+<tr><td class="tag-cyan">昆仑芯</td><td>P800</td><td>345</td><td>-</td><td>96 GB HBM2e</td><td>2.0 TB/s</td><td>XPU-Link</td><td>-</td><td>XPU-P 架构，8卡可跑 V4-Flash</td></tr>
+</tbody>
+</table>
+<p class="note">国产 GPU 参数多为官方公布峰值，实际训练效率受框架适配度和通信库成熟度影响，通常需乘以 0.5-0.7 的生态效率系数。</p>
+</div>
+
+<h3>2.4 &nbsp; 选卡决策速查</h3>
+<div class="card">
+<p><strong>训练优先</strong>：A800 80GB（算力强）＞ 910B3（显存大+生态追赶）＞ H20（算力弱但显存最大）</p>
+<p><strong>推理优先</strong>：H20（96GB+4TB/s 带宽，单卡装大模型）＞ 910B3 ≈ A800 80GB</p>
+<p><strong>LoRA 微调</strong>：显存够用即可，H20 单卡 96GB 几乎覆盖所有 70B 以下模型</p>
+<p><strong>国产替代</strong>：910B3 目前生态最成熟，C600 参数亮眼但需验证</p>
+</div>
+</div>
+
+<!-- ==================== 03 推理 QPM ==================== -->
+<div id="sec-infer" class="section">
+<h2>推理性能：QPM 速算公式 <span class="section-tag">Decode 阶段 · 带宽瓶颈</span></h2>
+<p class="section-desc">给定模型参数与 GPU 型号，速算单节点能支撑的 QPM（每分钟查询数）。</p>
+
+<h3>3.1 &nbsp; 核心推导逻辑</h3>
+<div class="card">
+<p>LLM 推理分两个阶段：</p>
+<p><strong>Prefill（预填充）</strong>：一次性处理输入 prompt，计算密集型，瓶颈在 FLOPs。</p>
+<p><strong>Decode（解码）</strong>：逐 token 自回归生成，每步都要重新读取全部权重+KV Cache，<span class="tag-red">内存带宽密集型</span>。</p>
+<p class="note">实际在线服务中，Decode 阶段占生成总耗时的 80-95%，因此 QPM 的瓶颈几乎总是内存带宽。</p>
+</div>
+
+<h3>3.2 &nbsp; 显存容量约束（能装下吗？）</h3>
+<div class="formula-box">
+<span class="label">单节点总显存</span> &nbsp;=&nbsp; <span class="var">N_gpu</span> × <span class="var">Mem_gpu</span><br><br>
+<span class="label">推理所需显存</span> &nbsp;=&nbsp; <span class="var">M_weights</span> + <span class="var">M_kv</span> + <span class="var">M_overhead</span><br><br>
+<span class="var">M_weights</span> &nbsp;=&nbsp; <span class="var">P_total</span> × <span class="var">B_param</span> &nbsp;&nbsp;<span class="comment">// MoE 模型：全部参数都要加载到显存</span><br>
+<span class="var">M_kv</span> &nbsp;=&nbsp; 2 × <span class="var">L</span> × <span class="var">H_kv</span> × <span class="var">D_head</span> × <span class="var">S</span> × <span class="var">B_concurrent</span> × <span class="var">B_kv</span> &nbsp;&nbsp;<span class="comment">// 2=K+V</span><br>
+<span class="var">M_overhead</span> &nbsp;≈&nbsp; 2~4 GB &nbsp;&nbsp;<span class="comment">// CUDA 上下文 + 框架缓冲</span><br>
+<p class="note">推理（decode 阶段）的中间激活值是临时分配、前向完即释放的，框架内存池会复用，因此不占用稳态显存。激活值仅在 prefill 阶段处理长 prompt 时瞬态较大，但算完即释放，不影响"能否装下"的判断。</p>
+</div>
+
+<p>参数说明：</p>
+<table>
+<tr><td><span class="tag-cyan">P_total</span></td><td>模型总参数量（含 MoE 全部专家）</td><td>如 1.6T（DeepSeek-V4-Pro）</td></tr>
+<tr><td><span class="tag-cyan">B_param</span></td><td>每参数字节数</td><td>FP16=2, INT8=1, INT4=0.5</td></tr>
+<tr><td><span class="tag-cyan">L</span></td><td>Transformer 层数</td><td>如 80</td></tr>
+<tr><td><span class="tag-cyan">H_kv</span></td><td>KV 头数（GQA 时较少）</td><td>如 Llama3-70B 为 8</td></tr>
+<tr><td><span class="tag-cyan">D_head</span></td><td>每头维度</td><td>通常 128</td></tr>
+<tr><td><span class="tag-cyan">S</span></td><td>上下文长度（token 数）</td><td>可调变量，默认 4096</td></tr>
+<tr><td><span class="tag-cyan">B_concurrent</span></td><td>并发请求数</td><td>取决于部署策略</td></tr>
+<tr><td><span class="tag-cyan">B_kv</span></td><td>KV Cache 精度字节数</td><td>FP16=2, INT8=1</td></tr>
+</table>
+
+<h3>3.3 &nbsp; QPM 公式（Decode 阶段，带宽瓶颈）</h3>
+
+<div class="formula-box">
+<span class="label">▎ 终极公式：单节点 QPM（Decode 阶段，带宽瓶颈）</span><br><br>
+
+<span class="comment">// 核心：Decode 每步读取 = 权重 + KV Cache</span><br>
+<span class="var">tokens/sec</span> &nbsp;=&nbsp; <span class="var">N_gpu</span> × <span class="var">BW_mem</span> × <span class="var">η_hw</span> × <span class="var">η_comm</span> × <span class="var">η_moe</span> &nbsp;/&nbsp; (<span class="var">P_active</span> × <span class="var">B_param</span> + <span class="var">KV_per_token</span> × <span class="var">S_avg</span>)<br><br>
+
+<span class="var">QPM</span> &nbsp;=&nbsp; <span class="var">tokens/sec</span> × 60 &nbsp;/&nbsp; <span class="var">S_out</span><br><br>
+
+<span class="comment">// 其中：</span><br>
+<span class="var">P_active</span> &nbsp;=&nbsp; 每 token 活跃参数量 &nbsp;&nbsp;<span class="comment">// Dense: P_total；MoE: 激活专家参数量</span><br>
+<span class="var">KV_per_token</span> &nbsp;=&nbsp; 2 × <span class="var">L</span> × <span class="var">H_kv</span> × <span class="var">D_head</span> × <span class="var">B_kv</span> &nbsp;&nbsp;<span class="comment">// 每 token 的 KV Cache 字节数</span><br>
+<span class="var">S_avg</span> &nbsp;=&nbsp; <span class="var">S_ctx</span> + <span class="var">S_out</span>/2 &nbsp;&nbsp;<span class="comment">// 平均 KV 序列长度（prompt + 半程输出）</span><br>
+<span class="var">S_ctx</span> &nbsp;=&nbsp; prompt 上下文长度 &nbsp;&nbsp;<span class="comment">// 改上下文会改变 KV 读取量</span><br>
+<span class="var">S_out</span> &nbsp;=&nbsp; 平均每请求输出 token 数<br>
+<span class="var">B_param</span> &nbsp;=&nbsp; 每参数字节数 &nbsp;&nbsp;<span class="comment">// FP16=2, INT8=1, INT4=0.5</span><br>
+<span class="var">η_hw</span> &nbsp;=&nbsp; 0.45~0.65 &nbsp;&nbsp;<span class="comment">// 算子利用率（vLLM+FlashAttn ≈ 0.55）</span><br>
+<span class="var">η_comm</span> &nbsp;=&nbsp; 1 - (<span class="var">N_gpu</span>-1)/(<span class="var">N_gpu</span>×<span class="var">R_nvlink</span>) &nbsp;&nbsp;<span class="comment">// 多卡通信效率</span><br>
+<span class="var">η_moe</span> &nbsp;=&nbsp; Dense=1.0, MoE=0.60~0.85 &nbsp;&nbsp;<span class="comment">// All-to-All 通信 + 专家负载不均衡 + 路由开销</span>
+</div>
+
+<div class="card">
+<h4>经验系数说明</h4>
+<p><span class="coeff-tag">η_hw = 0.45~0.65</span> &nbsp; 实测算子利用率。理论带宽不可能 100% 利用——FlashAttention 可达 60-70%，但 Continuous Batching、调度开销等因素拉低至 45-65%。vLLM 默认配置实测约 50-55%。<strong>取值建议</strong>：vLLM + FlashAttn 取 0.55，裸 PyTorch 取 0.40。</p>
+<p><span class="coeff-tag">η_comm</span> &nbsp; 多卡张量并行的通信效率。每步 AllReduce 需传 2×(N-1)/N 的激活数据，通信耗时与 NVLink/显存带宽比相关。8 卡 H100(NVLink 900GB/s vs 3.35TB/s) η_comm ≈ 0.87；8 卡 A800(NVLink 400GB/s vs 2TB/s) η_comm ≈ 0.78。</p>
+<p><span class="coeff-tag">η_moe = 0.60~0.85</span> &nbsp; MoE 模型综合效率损失。包含三个因素：① <strong>All-to-All 通信</strong>：token 路由到持有激活专家的 GPU，结果再回收，延迟与 EP 度正相关；② <strong>专家负载不均衡</strong>：192 专家选 top-8，不是每 GPU 均匀分到，有的空转有的过载；③ <strong>路由门控开销</strong>：每层都要计算 gate + dispatch，虽小但不可忽略。<strong>取值建议</strong>：EP=8 取 0.70，EP=4 取 0.80，纯 TP(无 EP) 取 0.90。</p>
+</div>
+
+<h3>3.4 &nbsp; MoE vs Dense 的区别</h3>
+<div class="card">
+<table>
+<tr><th></th><th>Dense 模型</th><th>MoE 模型</th></tr>
+<tr><td class="tag-orange">P_total</td><td>= P_active（全部参与计算）</td><td>≥ P_active（专家权重全部加载，但只激活部分）</td></tr>
+<tr><td class="tag-orange">M_weights</td><td>P_active × B_param</td><td>P_total × B_param（显存装全量）</td></tr>
+<tr><td class="tag-orange">每 token 计算 FLOPs</td><td>2 × P_active</td><td>2 × P_active（只算激活参数）</td></tr>
+<tr><td class="tag-orange">每 token 读取带宽</td><td>P_active × B_param</td><td>P_active × B_param（只读激活专家权重）<br>+ 极小的路由门控开销（可忽略）</td></tr>
+</table>
+<p class="note">MoE 关键：显存瓶颈看 P_total（全部专家需加载），计算/带宽瓶颈看 P_active（每 token 只读激活专家）。Decode 阶段每 token 权重读取量 = P_active × B_param，与 Dense 模型形式相同，只是 P_active ≪ P_total。若启用 Expert Parallelism，不同专家分到不同 GPU，等效每 GPU 读取量进一步降低。</p>
+</div>
+
+<h3>3.5 &nbsp; 速算示例</h3>
+<div class="card-alt">
+<p><strong>场景 A</strong>：8×H20，Qwen3-32B（32B Dense），INT8 量化，4K 上下文，输出 500 token</p>
+<p>每步权重读取 = 32B × 1 byte = 32 GB | KV读取 ≈ 0.05 GB（可忽略）</p>
+<p>tokens/sec = 8 × 4000 × 0.55 × 0.80 / 32 ≈ 440</p>
+<p>QPM = 440 × 60 / 500 ≈ <span class="tag-green">53 QPM</span></p>
+</div>
+<div class="card-alt">
+<p><strong>场景 B</strong>：8×H20，DeepSeek-V4-Flash（284B/13B MoE），INT8 量化，4K 上下文，输出 500 token</p>
+<p>每步权重读取 = 13B × 1 byte = 13 GB | KV读取 ≈ 0.02 GB（可忽略）</p>
+<p>tokens/sec = 8 × 4000 × 0.55 × 0.80 × 0.70 / 13 ≈ 955</p>
+<p>QPM = 955 × 60 / 500 ≈ <span class="tag-green">115 QPM</span></p>
+<p class="note">MoE 的 P_active(13B) 远小于 Dense 的 P_total(32B)，即使乘以 η_moe=0.70 的损耗，每步读取量仍只有 Dense 的 28%，所以 MoE 的 QPM 反而更高。这是 MoE 推理的核心优势：以 4.4× 参数量换取 2.2× 吞吐。CSA/HCA 注意力压缩后 KV 几乎可忽略，长上下文场景优势更大。</p>
+</div>
+
+</div>
+
+<!-- ==================== 04 训练 GPU 数 ==================== -->
+<div id="sec-train" class="section">
+<h2>训练性能：最低 GPU 数量公式 <span class="section-tag">全量训练 · AdamW + Mixed Precision</span></h2>
+<p class="section-desc">给定模型参数与 GPU 型号，速算全量训练需要的最低显卡数量。</p>
+
+<h3>4.1 &nbsp; 全量训练显存拆解</h3>
+<div class="formula-box">
+<span class="label">▎ 全量训练显存</span> &nbsp;=&nbsp; <span class="var">M_model</span> + <span class="var">M_grad</span> + <span class="var">M_optim</span> + <span class="var">M_act</span><br><br>
+<span class="var">M_model</span> &nbsp;=&nbsp; <span class="var">P_total</span> × 2 bytes &nbsp;&nbsp;<span class="comment">// FP16/BF16 权重</span><br>
+<span class="var">M_grad</span> &nbsp;=&nbsp; <span class="var">P_total</span> × 2 bytes &nbsp;&nbsp;<span class="comment">// 梯度（同精度）</span><br>
+<span class="var">M_optim</span> &nbsp;=&nbsp; <span class="var">P_total</span> × 8 bytes &nbsp;&nbsp;<span class="comment">// AdamW: m(4B) + v(4B) = 8B/param（BF16 推荐，不需 master）</span><br>
+<span class="comment">// ⚠️ 如用 FP16 训练(需 master weights): 请 ×1.5 = 12B/param</span>
+<span class="var">M_act</span> &nbsp;=&nbsp; <span class="var">S</span> × <span class="var">B</span> × <span class="var">H</span> × <span class="var">L</span> × 2 × 2 bytes &nbsp;&nbsp;<span class="comment">// 激活值(开启 activation checkpointing，只存输入)</span><br>
+<span class="comment">// attention: 输入 S×B×H, FP16 = ×2 bytes | MLP: 输入 S×B×H, FP16 = ×2 bytes</span><br>
+<span class="comment">// MoE 的 MLP 激活按 P_active/P_total 比例缩放</span>
+</div>
+
+<p>参数说明：</p>
+<table>
+<tr><td><span class="tag-cyan">P_total</span></td><td>模型总参数量</td><td>MoE 按总参数计（含全部专家）</td></tr>
+<tr><td><span class="tag-cyan">H</span></td><td>Hidden Dimension</td><td>MoE 按激活参数的 hidden_dim</td></tr>
+<tr><td><span class="tag-cyan">L</span></td><td>Transformer 层数</td><td></td></tr>
+<tr><td><span class="tag-cyan">S</span></td><td>序列长度</td><td></td></tr>
+<tr><td><span class="tag-cyan">B</span></td><td>单 GPU Batch Size</td><td></td></tr>
+</table>
+
+<h3>4.2 &nbsp; 最低 GPU 数公式</h3>
+<div class="formula-box">
+<span class="label">▎ 终极公式：最低 GPU 数</span><br><br>
+<span class="var">N_min</span> &nbsp;=&nbsp; ⌈ <span class="var">M_train</span> / (<span class="var">Mem_gpu</span> × <span class="var">η_frag</span>) ⌉<br><br>
+<span class="var">M_train</span> &nbsp;=&nbsp; <span class="var">M_model</span> + <span class="var">M_grad</span> + <span class="var">M_optim</span> + <span class="var">M_act</span> &nbsp;&nbsp;<span class="comment">// ZeRO-0（无分片）</span><br>
+<span class="comment">// ZeRO 分片后，M_grad 和 M_optim 按 N_gpu 均摊，详见 4.4</span>
+</div>
+
+<h3>4.3 &nbsp; 经验系数</h3>
+<div class="card">
+<p><span class="coeff-tag">η_frag = 0.85</span> &nbsp; 显存碎片系数。实际可用显存 < GPU 标称值，CUDA 上下文 ~1.5GB、框架缓冲 ~1-2GB、碎片无法利用约 5-10%。综合取 0.85。</p>
+<p><span class="coeff-tag">激活值(act ckpt)</span> &nbsp; 公式中每层 ×2 表示：开启 activation checkpointing 后，每层只需存 attention 输入(2) + MLP 输入(2) = 2 项 × FP16(2 bytes) = 4 bytes/element。MoE 的 MLP 激活按 P_active/P_total 比例缩放。</p>
+</div>
+
+<h3>4.4 &nbsp; ZeRO 策略显存节省</h3>
+<div class="card">
+<table>
+<tr><th>策略</th><th>分片内容</th><th>每 GPU 显存</th><th>适用场景</th></tr>
+<tr><td class="tag-orange">ZeRO-0</td><td>无分片</td><td>M_total（完整副本）</td><td>小模型 / 单卡</td></tr>
+<tr><td class="tag-orange">ZeRO-1</td><td>优化器状态</td><td>M_model + M_grad + M_optim/N</td><td>中等模型</td></tr>
+<tr><td class="tag-orange">ZeRO-2</td><td>优化器 + 梯度</td><td>M_model + (M_grad+M_optim)/N</td><td>大模型推荐</td></tr>
+<tr><td class="tag-orange">ZeRO-3</td><td>全部分片</td><td>(M_model+M_grad+M_optim)/N + M_act</td><td>超大模型必需</td></tr>
+</table>
+<p class="note">ZeRO-3 的 M_act 不可分片（每 GPU 需完整激活），且额外通信开销约 15-20%。实际选择需平衡通信带宽与显存压力。</p>
+</div>
+
+<h3>4.5 &nbsp; 速算示例</h3>
+<div class="card-alt">
+<p><strong>场景</strong>：DeepSeek-V4-Flash（284B 总参/13B 激活），8×H20，ZeRO-3，4K 序列，BS=1</p>
+<p>M_model = 284B × 2 = 568 GB | M_grad = 568 GB | M_optim = 284B × 8 = 2272 GB</p>
+<p>M_act ≈ 4096 × 1 × 4096 × 43 × 2 × 2 ≈ 2.7 GB</p>
+<p>M_total = 568 + 568 + 2272 + 2.7 = 3410.7 GB</p>
+<p>ZeRO-3: 每 GPU ≈ (568+568+3408)/N + 49 + 568/N → N_min ≈ ⌈4593/(96×0.85)⌉ = ⌈56.3⌉ = <span class="tag-green">57 卡（建议 64 卡 = 8 节点）</span></p>
+<p class="note">MoE 训练：权重/梯度/优化器按 P_total=284B 计算，激活按 P_active 的 hidden_dim=4096 计算。</p>
+</div>
+</div>
+
+<!-- ==================== 05 LoRA 微调 ==================== -->
+<div id="sec-lora" class="section">
+<h2>LoRA 微调：最低 GPU 数量公式 <span class="section-tag">低秩适配 · 冻结基座</span></h2>
+<p class="section-desc">给定模型参数与 GPU 型号，速算 LoRA 微调需要的最低显卡数量。</p>
+
+<h3>5.1 &nbsp; LoRA 显存拆解</h3>
+<div class="formula-box">
+<span class="label">▎ LoRA 微调显存</span> &nbsp;=&nbsp; <span class="var">M_frozen</span> + <span class="var">M_lora</span> + <span class="var">M_lora_optim</span> + <span class="var">M_lora_grad</span> + <span class="var">M_act</span> + <span class="var">M_overhead</span><br><br>
+<span class="var">M_frozen</span> &nbsp;=&nbsp; <span class="var">P_total</span> × <span class="var">B_base</span> &nbsp;&nbsp;<span class="comment">// 冻结基座权重（可量化）</span><br>
+<span class="var">M_lora</span> &nbsp;=&nbsp; <span class="var">P_lora</span> × 2 &nbsp;&nbsp;<span class="comment">// LoRA 可训练权重(FP16)</span><br>
+<span class="var">M_lora_optim</span> &nbsp;=&nbsp; <span class="var">P_lora</span> × 8 &nbsp;&nbsp;<span class="comment">// AdamW: m(4B)+v(4B)=8B/param（仅 LoRA 参数需优化器）</span><br>
+<span class="var">M_lora_grad</span> &nbsp;=&nbsp; <span class="var">P_lora</span> × 2 &nbsp;&nbsp;<span class="comment">// LoRA 梯度</span><br>
+<span class="var">P_lora</span> &nbsp;=&nbsp; <span class="var">L</span> × <span class="var">n_proj</span> × 2 × <span class="var">r</span> × <span class="var">H</span> &nbsp;&nbsp;<span class="comment">// L=层数, n_proj=Target投影数, r=rank, 2=A+B</span>
+</div>
+
+<p>参数说明：</p>
+<table>
+<tr><td><span class="tag-cyan">B_base</span></td><td>基座权重精度</td><td>FP16=2, INT8=1, INT4=0.5(QLoRA)</td></tr>
+<tr><td><span class="tag-cyan">n_proj</span></td><td>Target 投影数</td><td>Q/K/V/O + Gate/Up/Down = 7（典型值）</td></tr>
+<tr><td><span class="tag-cyan">r</span></td><td>LoRA Rank</td><td>通常 8~64</td></tr>
+</table>
+
+<h3>5.2 &nbsp; 最低 GPU 数公式</h3>
+<div class="formula-box">
+<span class="label">▎ 终极公式：最低 GPU 数</span><br><br>
+<span class="var">N_min</span> &nbsp;=&nbsp; ⌈ <span class="var">M_lora_total</span> / (<span class="var">Mem_gpu</span> × <span class="var">η_frag</span>) ⌉<br><br>
+<span class="comment">// LoRA 不需要 ZeRO，因为可训练参数极少，无需跨卡分片</span><br>
+<span class="comment">// 但如果基座很大（>70B），需要 Tensor Parallel 分片基座权重</span>
+</div>
+
+<h3>5.3 &nbsp; 经验系数</h3>
+<div class="card">
+<p><span class="coeff-tag">η_frag = 0.85</span> &nbsp; 同训练，显存碎片+框架开销。</p>
+<p><span class="coeff-tag">M_overhead ≈ 2 GB</span> &nbsp; CUDA 上下文 + 框架缓冲。</p>
+<p><span class="coeff-tag">M_act(act ckpt)</span> &nbsp; LoRA 激活值 = S × B × H × L × 2 × 2 bytes，与全量训练公式相同（开启 activation checkpointing，只存输入）。虽然 LoRA 可训练参数少，但前向传播仍需存中间激活用于反向传播。</p>
+</div>
+
+<h3>5.4 &nbsp; QLoRA 省显存</h3>
+<div class="card">
+<table>
+<tr><th>策略</th><th>基座精度</th><th>M_frozen 占比</th><th>典型节省</th></tr>
+<tr><td class="tag-orange">标准 LoRA</td><td>FP16/BF16</td><td>P_total × 2</td><td>无节省</td></tr>
+<tr><td class="tag-orange">LoRA + INT8</td><td>INT8 量化</td><td>P_total × 1</td><td>M_frozen 减半</td></tr>
+<tr><td class="tag-orange">QLoRA (INT4)</td><td>INT4 + NF4</td><td>P_total × 0.5</td><td>M_frozen 省 75%</td></tr>
+</table>
+<p class="note">QLoRA 使用 NF4 量化 + 双量化，在几乎不损失精度的情况下将基座权重压缩至 4bit。这是单卡微调 70B 模型的关键技巧。</p>
+</div>
+
+<h3>5.5 &nbsp; 速算示例</h3>
+<div class="card-alt">
+<p><strong>场景</strong>：Hy3 混元3（295B 总参/21B 激活），8×H20，QLoRA INT4，r=16，n_proj=7，4K 序列</p>
+<p>P_lora = 80 × 7 × 2 × 16 × 4096 ≈ 0.58B 参数</p>
+<p>M_frozen = 295B × 0.5 = 147.5 GB | M_lora = 0.58B × 2 = 1.16 GB | M_lora_optim = 0.58B × 8 = 4.64 GB</p>
+<p>M_act ≈ 4096 × 1 × 4096 × 80 × 2 ≈ 2.7 GB | M_overhead ≈ 3 GB</p>
+<p>M_total ≈ 147.5 + 1.16 + 4.64 + 1.16 + 2.7 + 3 = 160.2 GB</p>
+<p>N_min = ⌈160.2 / (96 × 0.85)⌉ = ⌈1.96⌉ = <span class="tag-green">2 卡（单节点即可）</span></p>
+<p class="note">QLoRA 的威力：295B 模型 INT4 基座仅 147.5 GB，2 张 H20 即可微调。全精度则需要 ⌈(295×16+0.58×12+2.7+3)/(96×0.85)⌉ = 59 卡。</p>
+</div>
+</div>
+</div><!-- main -->
+
+<script>
+// ===== Model Presets =====
+const MODEL_PRESETS = {
+  'glm51': {
+    name: 'GLM-5.1', arch: 'moe', ptotal: 754, pactive: 32,
+    layers: 78, hidden: 6144, hkv: 64, dhead: 128,
+    note: '⚠️ GLM-5.1 使用 MLA 注意力机制（kv_lora_rank=512），KV Cache 实际远小于标准 GQA 公式计算值，实际推理 QPM 会更高'
+  },
+  'deepseek-v4-pro': {
+    name: 'DeepSeek-V4-Pro', arch: 'moe', ptotal: 1600, pactive: 49,
+    layers: 61, hidden: 7168, hkv: 1, dhead: 512,
+    note: '⚠️ V4-Pro 使用 CSA+HCA 混合注意力（极端压缩），1M上下文 KV Cache 仅约 7.7GB（同规模标准模型需 122GB），实际推理 QPM 远高于公式计算值'
+  },
+  'deepseek-v4-flash': {
+    name: 'DeepSeek-V4-Flash', arch: 'moe', ptotal: 284, pactive: 13,
+    layers: 43, hidden: 4096, hkv: 1, dhead: 512,
+    note: '⚠️ V4-Flash 同样使用 CSA+HCA 混合注意力，KV Cache 压缩率更极端（仅 7%），实际推理 QPM 远高于公式计算值'
+  },
+  'hy3': {
+    name: 'Hy3 混元3', arch: 'moe', ptotal: 295, pactive: 21,
+    layers: 80, hidden: 4096, hkv: 8, dhead: 128,
+    note: '192 专家 / top-8 激活，GQA 8 KV 头，附 3.8B MTP 层参数'
+  },
+  'qwen3-32b': {
+    name: 'Qwen3-32B', arch: 'dense', ptotal: 32, pactive: 32,
+    layers: 64, hidden: 5120, hkv: 8, dhead: 128, note: ''
+  }
+};
+
+function applyModelPreset(prefix) {
+  const sel = document.getElementById(prefix + '-model');
+  const key = sel.value;
+  if (!key) return;
+  const m = MODEL_PRESETS[key];
+
+  const fields = {
+    'arch': m.arch,
+    'ptotal': m.ptotal,
+    'pactive': m.pactive,
+    'layers': m.layers,
+    'hidden': m.hidden
+  };
+
+  for (const [field, val] of Object.entries(fields)) {
+    const el = document.getElementById(prefix + '-' + field);
+    if (el) {
+      if (el.tagName === 'SELECT') el.value = val;
+      else el.value = val;
+    }
+  }
+
+  // Infer-specific: hkv, dhead, η_moe visibility
+  if (prefix === 'infer') {
+    document.getElementById('infer-hkv').value = m.hkv;
+    document.getElementById('infer-dhead').value = m.dhead;
+    toggleMoeEfficiency(m.arch);
+  }
+
+  // Show model note
+  const noteEl = document.getElementById(prefix + '-model-note');
+  if (m.note) {
+    noteEl.textContent = m.note;
+    noteEl.style.display = 'inline-block';
+  } else {
+    noteEl.style.display = 'none';
+  }
+
+  // Trigger calculation
+  if (prefix === 'infer') calcInference();
+  else if (prefix === 'train') calcTraining();
+  else if (prefix === 'lora') calcLora();
+}
+
+// Show/hide MoE efficiency field based on arch
+function toggleMoeEfficiency(arch) {
+  const wrap = document.getElementById('infer-eta-moe-wrap');
+  if (wrap) {
+    wrap.style.display = (arch === 'moe') ? '' : 'none';
+  }
+}
+
+function toggleAdv(el, advId) {
+  el.classList.toggle('open');
+  document.getElementById(advId).classList.toggle('show');
+}
+
+// ===== Section Switching =====
+function switchSection(name, el) {
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('sec-' + name).classList.add('active');
+  document.querySelector('.main').scrollTop = 0;
+}
+
+// ===== Calc Tab Switching =====
+function switchCalcTab(name, el) {
+  document.querySelectorAll('.calc-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.calc-panel').forEach(p => p.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('calc-' + name).classList.add('active');
+}
+
+// ===== GPU Params =====
+function getGPUParams(selectId) {
+  const sel = document.getElementById(selectId);
+  if (sel.value === 'custom') return null;
+  return sel.value.split(',').map(Number);
+}
+
+function fmt(gb) {
+  if (gb >= 1000) return (gb/1000).toFixed(1) + ' TB';
+  return gb.toFixed(1) + ' GB';
+}
+
+// ===== Inference Calculator =====
+function calcInference() {
+  const gpu = getGPUParams('infer-gpu');
+  if (!gpu) return;
+  const [memGB, bwGBs, flops, nvlinkBw] = gpu;
+  const ngpu = +document.getElementById('infer-ngpu').value;
+  const arch = document.getElementById('infer-arch').value;
+  const ptotal = +document.getElementById('infer-ptotal').value;
+  const pactive = +document.getElementById('infer-pactive').value;
+  const bparam = +document.getElementById('infer-prec').value;
+  const seqlen = +document.getElementById('infer-seqlen').value;
+  const outlen = +document.getElementById('infer-outlen').value;
+  const layers = +document.getElementById('infer-layers').value;
+  const hkv = +document.getElementById('infer-hkv').value;
+  const dhead = +document.getElementById('infer-dhead').value;
+  const bkv = +document.getElementById('infer-kvprec').value;
+  const etaHw = +document.getElementById('infer-eta-hw').value;
+  const etaMoe = (arch === 'moe') ? (+document.getElementById('infer-eta-moe').value) : 1.0;
+
+  // === 显存容量约束 ===
+  const mWeights = ptotal * bparam; // GB, 全部参数需加载（MoE 全部专家）
+  const kvPerToken = 2 * layers * hkv * dhead * bkv; // bytes per token
+  const mKVPerReq = kvPerToken * seqlen / 1e9; // GB per request
+  const mOverhead = 2; // CUDA ctx + framework ~2GB
+  const mTotal = mWeights + mKVPerReq + mOverhead;
+  const nodeMem = ngpu * memGB;
+  const memEnough = nodeMem >= mTotal;
+
+  // === Decode 吞吐量计算（带宽瓶颈）===
+  // 每步读取：活跃权重 + KV Cache
+  const pUse = (arch === 'moe') ? pactive : ptotal;
+  const weightReadPerStep = pUse * bparam; // GB
+  // KV 读取：平均读 (seqlen + outlen/2) 个历史 token 的 KV
+  const avgKVLen = seqlen + outlen / 2;
+  const kvReadPerStep = kvPerToken * avgKVLen / 1e9; // GB
+  const readPerStep = weightReadPerStep + kvReadPerStep;
+
+  // 通信效率（经验公式，受 TP/PP 策略影响）
+  let etaComm = 1.0;
+  if (ngpu > 1) {
+    if (nvlinkBw > 0 && bwGBs > 0) {
+      const R = nvlinkBw / bwGBs;
+      // All-Reduce 通信开销经验估计
+      etaComm = 1 - (ngpu - 1) / (ngpu * R * 2);
+      etaComm = Math.max(0.5, Math.min(0.95, etaComm));
+    } else {
+      // 无 NVLink（PCIe）: 通信开销更大
+      etaComm = 1 - 0.3 * (ngpu - 1) / ngpu;
+      etaComm = Math.max(0.4, Math.min(0.9, etaComm));
+    }
+  }
+
+  // Decode 吞吐: min(带宽瓶颈, 计算瓶颈)
+  let tokensPerSec = 0, qpm = 0, bottleneck = '带宽';
+  if (memEnough) {
+    // 带宽瓶颈: tokens/s = 有效带宽 / 每步读取量
+    const tpsBW = ngpu * bwGBs * etaHw * etaComm * etaMoe / readPerStep;
+    // 计算瓶颈: tokens/s = 总 FLOPS / 每 token FLOPS
+    // 每 token 约需 2×P_use 次 FP 运算（前向，matmul ≈ 2×参数量）
+    // flops 单位: TFLOPS (GPU 预设值), 需转 FLOPS (×1e12)
+    const flopsPerToken = pUse * 1e9 * 2;
+    const tpsCompute = (ngpu * flops * 1e12) / flopsPerToken;
+    tokensPerSec = Math.min(tpsBW, tpsCompute);
+    bottleneck = tpsBW <= tpsCompute ? '带宽' : '计算';
+    qpm = tokensPerSec * 60 / outlen;
+  }
+
+  // 最大并发请求数（显存约束）
+  const maxConcurrent = Math.max(0, Math.floor((nodeMem - mWeights - mOverhead) / mKVPerReq));
+
+  document.getElementById('infer-qpm').textContent = memEnough ? Math.round(qpm).toLocaleString() : 'N/A';
+  document.getElementById('infer-mem-total').textContent = fmt(nodeMem);
+  document.getElementById('infer-mem-need').textContent = fmt(mTotal);
+  document.getElementById('infer-mem-kv').textContent = fmt(mKVPerReq) + '/req';
+
+  let detail = `架构: ${arch.toUpperCase()} | 活跃: ${pUse}B | 总参: ${ptotal}B | 精度: ${bparam===2?'FP16':bparam===1?'INT8':'INT4'}\n`;
+  detail += `每步权重读取: ${weightReadPerStep.toFixed(1)} GB | KV读取(avg ctx=${Math.round(avgKVLen)}): ${kvReadPerStep.toFixed(3)} GB\n`;
+  const kvRatio = kvReadPerStep / weightReadPerStep * 100;
+  detail += `KV/权重比: ${kvRatio.toFixed(1)}%` + (kvRatio > 20 ? ' ← KV 不可忽略！' : '') + `\n`;
+  detail += `η_hw=${etaHw}, η_comm=${etaComm.toFixed(3)}` + (arch === 'moe' ? `, η_moe=${etaMoe.toFixed(2)}` : '') + `\n`;
+  if (memEnough) {
+    detail += `\n── 计算过程 ──────────────────────────\n`;
+    detail += `每token读取 = ${weightReadPerStep.toFixed(1)} + ${kvReadPerStep.toFixed(3)} = ${readPerStep.toFixed(3)} GB/token\n`;
+    const tpsBW = ngpu * bwGBs * etaHw * etaComm * (arch==='moe'?etaMoe:1) / readPerStep;
+    const flopsPerToken = pUse * 1e9 * 2;
+    const tpsCompute = (ngpu * flops * 1e12) / flopsPerToken;
+    detail += `带宽瓶颈 = ${ngpu} × ${bwGBs} × ${etaHw} × ${etaComm.toFixed(3)}` + (arch==='moe'?` × ${etaMoe.toFixed(2)}`:'') + ` / ${readPerStep.toFixed(3)} = ${tpsBW.toFixed(1)} tok/s\n`;
+    detail += `计算瓶颈 = ${ngpu} × ${flops.toFixed(0)} TFLOPS × 1e12 / (${(pUse*1e9).toExponential(1)} × 2) = ${tpsCompute.toFixed(0)} tok/s\n`;
+    detail += `→ 瓶颈 = ${bottleneck} (${tpsBW.toFixed(1)} < ${tpsCompute.toFixed(0)})\n`;
+    detail += `单请求吞吐 = ${tokensPerSec.toFixed(1)} × ${ngpu} = ${(tokensPerSec*ngpu).toFixed(1)} tok/s\n`;
+    detail += `QPM = ${tokensPerSec.toFixed(1)} × 60 / ${outlen} = ${Math.round(qpm)}\n`;
+  }
+  if (!memEnough) {
+    detail += `⚠️ 显存不足: 需要 ${fmt(mTotal)}, 可用 ${fmt(nodeMem)}\n`;
+    detail += `建议: 增加 GPU / 降精度 / Expert Parallelism`;
+  } else {
+    detail += `最大并发(显存): ${maxConcurrent} 请求 | ${tokensPerSec.toFixed(1)} tokens/s → ${Math.round(qpm)} QPM\n`;
+    if (maxConcurrent > 1) {
+      const cbBatch = Math.min(maxConcurrent, 32);
+      detail += `💡 Continuous Batching (batch=${cbBatch}): 理论上限 ~${Math.round(qpm * cbBatch).toLocaleString()} QPM`;
+    }
+  }
+  document.getElementById('infer-detail').textContent = detail;
+}
+
+// ===== Training Calculator =====
+function calcTraining() {
+  const gpu = getGPUParams('train-gpu');
+  if (!gpu) return;
+  const [memGB, bwGBs, flops] = gpu;
+  const ptotal = +document.getElementById('train-ptotal').value;
+  const pactive = +document.getElementById('train-pactive').value;
+  const zeroStage = +document.getElementById('train-zero').value;
+  const seqlen = +document.getElementById('train-seqlen').value;
+  const bs = +document.getElementById('train-bs').value;
+  const hidden = +document.getElementById('train-hidden').value;
+  const layers = +document.getElementById('train-layers').value;
+  const arch = document.getElementById('train-arch').value;
+  const etaFrag = 0.85;
+
+  const P_total = ptotal * 1e9;
+
+  // MoE: 权重/梯度/优化器按 P_total，MLP 激活按 expert 激活比例
+  const mlpActiveRatio = (arch === 'moe') ? (pactive / ptotal) : 1.0;
+
+  const mModel = P_total * 2;        // BF16 权重（推荐）
+  const mGrad = P_total * 2;         // BF16 梯度
+  const mOptim = P_total * 8;        // Adam: FP32 m+v = 8 bytes/param (BF16, 不需 master)
+
+  // 激活值（开启 activation checkpointing，只存每层输入）
+  // 反向传播时重新计算，不存中间激活值
+  // attention: 输入 seqlen×bs×hidden, FP16 = ×2 bytes
+  // MLP: 输入 seqlen×bs×hidden, FP16 = ×2 bytes
+  // MoE 的 MLP 激活按 expert 激活比例缩放
+  const mActAttn = seqlen * bs * hidden * layers * 2;  // attention: 只存输入, FP16
+  const mActMLP = seqlen * bs * hidden * layers * 2 * mlpActiveRatio;  // MLP: 只存输入, FP16
+  const mAct = mActAttn + mActMLP;
+
+  const mTotal = mModel + mGrad + mOptim + mAct;
+  const mTotalGB = mTotal / 1e9;
+
+  // 迭代求解 ZeRO 后每 GPU 显存和最低 GPU 数
+  let nMin = Math.max(1, Math.ceil(mTotalGB / (memGB * etaFrag)));
+  let mPerGPU = mTotal;
+
+  for (let iter = 0; iter < 5; iter++) {
+    const n = nMin;
+    if (zeroStage === 0) {
+      mPerGPU = mTotal; // 无分片
+    } else if (zeroStage === 1) {
+      mPerGPU = mModel + mGrad + mOptim / n + mAct; // 优化器分片
+    } else if (zeroStage === 2) {
+      mPerGPU = mModel + (mGrad + mOptim) / n + mAct; // 优化器+梯度分片
+    } else {
+      mPerGPU = (mModel + mGrad + mOptim) / n + mAct; // 全分片
+    }
+    const newN = Math.max(1, Math.ceil((mPerGPU / 1e9) / (memGB * etaFrag)));
+    if (newN === nMin) break;
+    nMin = newN;
+  }
+
+  const mPerGPUGB = mPerGPU / 1e9;
+
+  let nSuggest = nMin;
+  if (nMin <= 8) nSuggest = Math.ceil(nMin / 8) * 8 || 8;
+  else if (nMin <= 16) nSuggest = 16;
+  else nSuggest = Math.ceil(nMin / 8) * 8;
+
+  document.getElementById('train-ngpu').textContent = nMin + ' → 建议 ' + nSuggest;
+  document.getElementById('train-mem-total').textContent = fmt(mTotalGB);
+  document.getElementById('train-mem-per-gpu').textContent = fmt(mPerGPUGB);
+  document.getElementById('train-mem-act').textContent = fmt(mAct / 1e9);
+
+  let detail = `\n── 计算过程 ─────────────────────\n`;
+  detail += `M_model  = P_total × 2(FP16)      = ${(P_total/1e9).toFixed(0)}B × 2 = ${fmt(mModel/1e9)}\n`;
+  detail += `M_grad   = P_total × 2(FP16)      = ${(P_total/1e9).toFixed(0)}B × 2 = ${fmt(mGrad/1e9)}\n`;
+  detail += `M_optim = P_total × 8(Adam FP32)  = ${(P_total/1e9).toFixed(0)}B × 8 = ${fmt(mOptim/1e9)}\n`;
+  detail += `M_act    = S×B×H×L × 2×2` + (arch==='moe'?` ×${(mlpActiveRatio*100).toFixed(0)}%`:'') + ` = ${fmt(mAct/1e9)}\n`;
+  detail += `M_total   = ${fmt(mModel/1e9)} + ${fmt(mGrad/1e9)} + ${fmt(mOptim/1e9)} + ${fmt(mAct/1e9)} = ${fmt(mTotalGB)}\n\n`;
+  if (zeroStage > 0) {
+    detail += `ZeRO-${zeroStage} 每GPU ≈ `;
+    if (zeroStage===1) detail += `(M_model+M_grad) + M_optim/n + M_act`;
+    else if (zeroStage===2) detail += `M_model + (M_grad+M_optim)/n + M_act`;
+    else detail += `(M_model+M_grad+M_optim)/n + M_act`;
+    detail += `\n  迭代求解: nMin = ${nMin}, 每GPU = ${fmt(mPerGPUGB)} (GPU可用 ${(memGB*etaFrag).toFixed(0)}GB)\n`;
+  }
+  detail += `\n权重(BF16 推荐): ${fmt(mModel/1e9)} | 梯度(BF16): ${fmt(mGrad/1e9)} | 优化器(Adam FP32): ${fmt(mOptim/1e9)} (8B/param)\n`;
+  detail += `⚠️ 如用 FP16 训练(需 master weights), 优化器请 ×1.5 = ${fmt(P_total*12/1e9)}\n`;
+  detail += `激活(act ckpt ✓ 只存输入): ${fmt(mAct/1e9)}` + (arch === 'moe' ? ` (MLP ×${(mlpActiveRatio*100).toFixed(1)}%)` : '') + `\n`;
+  detail += `ZeRO-${zeroStage} 每GPU: ${fmt(mPerGPUGB)} | GPU可用: ${(memGB * etaFrag).toFixed(0)} GB\n`;
+  if (arch === 'moe') {
+    detail += `⚠ MoE: 权重/梯度/优化器按 P_total=${ptotal}B，MLP激活按 P_active=${pactive}B (${(mlpActiveRatio*100).toFixed(1)}%)`;
+  }
+  document.getElementById('train-detail').textContent = detail;
+}
+
+// ===== LoRA Calculator =====
+function calcLora() {
+  const gpu = getGPUParams('lora-gpu');
+  if (!gpu) return;
+  const [memGB, bwGBs, flops] = gpu;
+  const ptotal = +document.getElementById('lora-ptotal').value;
+  const basePrec = +document.getElementById('lora-base-prec').value;
+  const rank = +document.getElementById('lora-rank').value;
+  const nproj = +document.getElementById('lora-nproj').value;
+  const layers = +document.getElementById('lora-layers').value;
+  const hidden = +document.getElementById('lora-hidden').value;
+  const seqlen = +document.getElementById('lora-seqlen').value;
+  const bs = +document.getElementById('lora-bs').value;
+  const etaFrag = 0.85;
+
+  const P = ptotal * 1e9;
+
+  // LoRA 参数量: 每层 nproj 个投影, A(rank×hidden) + B(hidden×rank)
+  const pLora = layers * nproj * 2 * rank * hidden;
+  const pLoraB = pLora / 1e9;
+
+  // 冻结权重（可量化）
+  const mFrozen = P * basePrec;
+
+  // LoRA 可训练参数存储
+  const mLoraParams = pLora * 2;   // FP16 权重
+  const mLoraGrad = pLora * 2;     // FP16 梯度
+  const mLoraOptim = pLora * 8;    // Adam: FP32 m+v = 8 bytes/param
+
+  // 激活值（开启 activation checkpointing，只存每层输入）
+  // 反向传播时重新计算，不存中间激活值
+  // 输入: seqlen×bs×hidden, FP16 = ×2 bytes
+  const mAct = seqlen * bs * hidden * layers * 2;  // 只存输入, FP16
+
+  const mOverhead = 2e9; // ~2 GB
+  const mTotal = mFrozen + mLoraParams + mLoraOptim + mLoraGrad + mAct + mOverhead;
+  const mTotalGB = mTotal / 1e9;
+
+  const nMin = Math.max(1, Math.ceil(mTotalGB / (memGB * etaFrag)));
+  let nSuggest = nMin;
+  if (nMin <= 8) nSuggest = Math.ceil(nMin / 8) * 8 || 8;
+  else nSuggest = Math.ceil(nMin / 8) * 8;
+
+  const ratio = (pLora / P * 100).toFixed(2);
+
+  document.getElementById('lora-ngpu').textContent = nMin + ' → 建议 ' + nSuggest;
+  document.getElementById('lora-mem-total').textContent = fmt(mTotalGB);
+  document.getElementById('lora-plora').textContent = pLoraB.toFixed(2) + 'B';
+  document.getElementById('lora-ratio').textContent = ratio + '%';
+
+  let detail = `\n── 计算过程 ────────────────────\n`;
+  detail += `pLora = ${layers}层 × ${nproj}proj × 2(A+B) × rank=${rank} × hidden=${hidden}\n`;
+  detail += `       = ${(layers*nproj*2*rank*hidden/1e9).toFixed(3)}B × 2 = ${pLoraB.toFixed(2)}B (${ratio}%)\n\n`;
+  detail += `M_total = M_frozen + M_loraParams + M_loraGrad + M_loraOptim + M_act + 2GB\n`;
+  detail += `        = ${fmt(mFrozen/1e9)} + ${fmt(mLoraParams/1e9)} + ${fmt(mLoraGrad/1e9)} + ${fmt(mLoraOptim/1e9)} + ${fmt(mAct/1e9)} + 2\n`;
+  detail += `        = ${fmt(mTotalGB)}\n\n`;
+  detail += `冻结权重(${basePrec===0.5?'INT4':basePrec===1?'INT8':'FP16'}): ${fmt(mFrozen/1e9)}\n`;
+  detail += `LoRA 权重: ${fmt(mLoraParams/1e9)} | 梯度: ${fmt(mLoraGrad/1e9)} | 优化器: ${fmt(mLoraOptim/1e9)}\n`;
+  detail += `激活(act ckpt ✓ 只存输入): ${fmt(mAct/1e9)} | 开销: ~2 GB\n`;
+  detail += `LoRA Rank=${rank}, ${nproj} proj × ${layers} layers = ${pLoraB.toFixed(2)}B (${ratio}%)\n`;
+  if (basePrec === 0.5) {
+    detail += `✅ QLoRA 模式：基座 INT4 量化，显存大幅节省`;
+  }
+  document.getElementById('lora-detail').textContent = detail;
+}
+
+// Auto-apply presets on load + initial calc
+document.addEventListener('DOMContentLoaded', function() {
+  applyModelPreset('infer');
+  applyModelPreset('train');
+  applyModelPreset('lora');
+});
+// Fallback if already loaded
+applyModelPreset('infer');
+applyModelPreset('train');
+applyModelPreset('lora');
+</script>
+</body>
+</html>
